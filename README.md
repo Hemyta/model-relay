@@ -1,7 +1,5 @@
 # model-relay
 
-Current version: `v1.0.0`
-
 Model Relay is a small, stateless HTTP relay for accessing AI model APIs through a trusted server. It transparently forwards request methods, paths, query parameters, headers, bodies, status codes, and streaming responses without parsing model payloads.
 
 The service does not use a database and does not store API keys, requests, responses, or user data. Access is protected by a separate relay token. Provider API keys and model parameters are always supplied by the caller.
