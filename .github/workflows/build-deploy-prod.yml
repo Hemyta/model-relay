@@ -1,0 +1,60 @@
+name: Build and Deploy (Production)
+
+on:
+  workflow_dispatch:
+
+env:
+  PROJECT_DIR: /opt/apps/model-relay
+  IMAGE: model-relay:latest
+  SERVER_USER: ubuntu
+  DOCKER_DEFAULT_PLATFORM: linux/amd64
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Run tests
+        run: |
+          docker build --target test --tag model-relay-test:ci .
+          docker run --rm model-relay-test:ci
+
+      - name: Build production image
+        run: docker build --target runtime --tag ${{ env.IMAGE }} .
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.PROD_SERVER_SSH_KEY }}" | tr -d '\r' > ~/.ssh/server_key
+          chmod 600 ~/.ssh/server_key
+          ssh-keyscan -H ${{ secrets.PROD_SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Prepare server and upload compose file
+        run: |
+          ssh -i ~/.ssh/server_key ${{ env.SERVER_USER }}@${{ secrets.PROD_SERVER_HOST }} \
+            "mkdir -p ${{ env.PROJECT_DIR }} && \
+            cd ${{ env.PROJECT_DIR }} && \
+            if [ ! -f .env ]; then \
+              umask 077; \
+              printf 'PORT=7500\nRELAY_TOKEN=%s\n' \"\$(openssl rand -base64 48 | tr -d '\n')\" > .env; \
+            fi"
+          scp -i ~/.ssh/server_key \
+            docker-compose.yml ${{ env.SERVER_USER }}@${{ secrets.PROD_SERVER_HOST }}:${{ env.PROJECT_DIR }}/
+
+      - name: Ship image to server
+        run: |
+          docker save ${{ env.IMAGE }} | gzip | \
+            ssh -i ~/.ssh/server_key \
+            ${{ env.SERVER_USER }}@${{ secrets.PROD_SERVER_HOST }} 'gunzip | docker load'
+
+      - name: Restart service and verify health
+        run: |
+          ssh -i ~/.ssh/server_key ${{ env.SERVER_USER }}@${{ secrets.PROD_SERVER_HOST }} \
+            "cd ${{ env.PROJECT_DIR }} && \
+            docker compose up -d --no-build --wait --wait-timeout 60 && \
+            docker image prune -f"
