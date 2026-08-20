@@ -16,7 +16,7 @@ def main() -> None:
         "contents": [
             {
                 "role": "user",
-                "parts": [{"text": "Tell me what can you do in 50 words."}],
+                "parts": [{"text": "Write a short poem about a cat who loves to chase butterflies."}],
             }
         ]
     }
